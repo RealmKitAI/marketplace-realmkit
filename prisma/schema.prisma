@@ -1,0 +1,917 @@
+// Marketplace Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER & AUTH ====================
+model User {
+  id                String           @id @default(cuid())
+  email             String           @unique
+  emailVerified     DateTime?
+  password          String?
+  name              String?
+  avatar            String?
+  phone             String?
+  phoneVerified     DateTime?
+  role              UserRole         @default(BUYER)
+  status            UserStatus       @default(ACTIVE)
+  twoFactorEnabled  Boolean          @default(false)
+  twoFactorSecret   String?
+  
+  // Profile
+  bio               String?
+  location          String?
+  language          String           @default("en")
+  currency          String           @default("USD")
+  timezone          String           @default("UTC")
+  
+  // Timestamps
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  lastLoginAt       DateTime?
+  deletedAt         DateTime?
+  
+  // Relations
+  seller            Seller?
+  buyer             Buyer?
+  addresses         Address[]
+  sessions          Session[]
+  notifications     Notification[]
+  messages          Message[]
+  reviews           Review[]
+  reports           Report[]
+  
+  @@index([email])
+  @@index([status])
+  @@map("users")
+}
+
+enum UserRole {
+  BUYER
+  SELLER
+  ADMIN
+  MODERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BANNED
+}
+
+// ==================== SELLER PLATFORM ====================
+model Seller {
+  id                String           @id @default(cuid())
+  userId            String           @unique
+  shopName          String           @unique
+  shopSlug          String           @unique
+  shopDescription   String?
+  shopLogo          String?
+  shopBanner        String?
+  
+  // Verification
+  verificationStatus VerificationStatus @default(PENDING)
+  verifiedAt        DateTime?
+  kycDocuments      Json?            // KYC document URLs
+  businessType      BusinessType     @default(INDIVIDUAL)
+  businessName      String?
+  taxId             String?
+  
+  // Stripe Connect
+  stripeAccountId   String?          @unique
+  stripeOnboarded   Boolean          @default(false)
+  payoutSchedule    PayoutSchedule   @default(WEEKLY)
+  
+  // Settings
+  vacationMode      Boolean          @default(false)
+  vacationMessage   String?
+  instantBooking    Boolean          @default(true)
+  customPolicies    Json?            // Return policy, shipping, etc.
+  
+  // Statistics
+  totalSales        Int              @default(0)
+  totalRevenue      Decimal          @default(0) @db.Decimal(12, 2)
+  averageRating     Float            @default(0)
+  responseTime      Int?             // Average response time in hours
+  
+  // Timestamps
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  // Relations
+  user              User             @relation(fields: [userId], references: [id])
+  listings          Listing[]
+  orders            Order[]
+  payouts           Payout[]
+  statements        Statement[]
+  followers         Follow[]
+  shopCategories    ShopCategory[]
+  promotions        Promotion[]
+  
+  @@index([shopSlug])
+  @@index([verificationStatus])
+  @@map("sellers")
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  SUSPENDED
+}
+
+enum BusinessType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum PayoutSchedule {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+// ==================== BUYER EXPERIENCE ====================
+model Buyer {
+  id                String           @id @default(cuid())
+  userId            String           @unique
+  
+  // Preferences
+  interests         String[]         // Category interests
+  savedSearches     SavedSearch[]
+  
+  // Statistics
+  totalPurchases    Int              @default(0)
+  totalSpent        Decimal          @default(0) @db.Decimal(12, 2)
+  
+  // Relations
+  user              User             @relation(fields: [userId], references: [id])
+  wishlists         Wishlist[]
+  following         Follow[]
+  cartItems         CartItem[]
+  orders            Order[]
+  
+  @@map("buyers")
+}
+
+// ==================== LISTINGS ====================
+model Listing {
+  id                String           @id @default(cuid())
+  sellerId          String
+  title             String
+  slug              String           @unique
+  description       String
+  condition         ItemCondition    @default(NEW)
+  status            ListingStatus    @default(DRAFT)
+  
+  // Pricing
+  price             Decimal          @db.Decimal(10, 2)
+  compareAtPrice    Decimal?         @db.Decimal(10, 2)
+  currency          String           @default("USD")
+  
+  // Inventory
+  sku               String?
+  quantity          Int              @default(1)
+  trackQuantity     Boolean          @default(true)
+  allowBackorder    Boolean          @default(false)
+  
+  // Categories & Tags
+  categoryId        String
+  subcategoryId     String?
+  tags              String[]
+  brand             String?
+  
+  // Media
+  images            ListingImage[]
+  videos            ListingVideo[]
+  thumbnail         String?
+  
+  // Shipping
+  weight            Float?           // in kg
+  dimensions        Json?            // {length, width, height}
+  shippingProfiles  ShippingProfile[]
+  digitalDelivery   Boolean          @default(false)
+  
+  // SEO
+  metaTitle         String?
+  metaDescription   String?
+  metaKeywords      String[]
+  
+  // AI Features
+  qualityScore      Float?           // AI-generated quality score
+  autoCaption       String?          // AI-generated description
+  suggestedPrice    Decimal?         @db.Decimal(10, 2)
+  fraudRiskScore    Float?
+  
+  // Statistics
+  views             Int              @default(0)
+  favorites         Int              @default(0)
+  soldCount         Int              @default(0)
+  
+  // Moderation
+  moderationStatus  ModerationStatus @default(PENDING)
+  moderatedAt       DateTime?
+  moderationNotes   String?
+  reportCount       Int              @default(0)
+  
+  // Timestamps
+  publishedAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  deletedAt         DateTime?
+  
+  // Relations
+  seller            Seller           @relation(fields: [sellerId], references: [id])
+  category          Category         @relation(fields: [categoryId], references: [id])
+  subcategory       Subcategory?     @relation(fields: [subcategoryId], references: [id])
+  variants          ListingVariant[]
+  reviews           Review[]
+  wishlists         WishlistItem[]
+  cartItems         CartItem[]
+  orderItems        OrderItem[]
+  reports           Report[]
+  
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([moderationStatus])
+  @@index([slug])
+  @@fulltext([title, description])
+  @@map("listings")
+}
+
+enum ItemCondition {
+  NEW
+  LIKE_NEW
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  SOLD_OUT
+  PAUSED
+  EXPIRED
+  DELETED
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FLAGGED
+}
+
+model ListingVariant {
+  id                String           @id @default(cuid())
+  listingId         String
+  name              String           // e.g., "Size", "Color"
+  value             String           // e.g., "Large", "Blue"
+  sku               String?
+  price             Decimal?         @db.Decimal(10, 2)
+  quantity          Int              @default(0)
+  image             String?
+  
+  listing           Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  
+  @@unique([listingId, name, value])
+  @@map("listing_variants")
+}
+
+model ListingImage {
+  id                String           @id @default(cuid())
+  listingId         String
+  url               String
+  alt               String?
+  position          Int              @default(0)
+  
+  listing           Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  
+  @@map("listing_images")
+}
+
+model ListingVideo {
+  id                String           @id @default(cuid())
+  listingId         String
+  url               String
+  thumbnail         String?
+  duration          Int?             // in seconds
+  
+  listing           Listing          @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  
+  @@map("listing_videos")
+}
+
+// ==================== CATEGORIES ====================
+model Category {
+  id                String           @id @default(cuid())
+  name              String           @unique
+  slug              String           @unique
+  description       String?
+  image             String?
+  parentId          String?
+  position          Int              @default(0)
+  isActive          Boolean          @default(true)
+  
+  // Commission
+  commissionRate    Float            @default(0.10) // 10% default
+  
+  parent            Category?        @relation("CategoryTree", fields: [parentId], references: [id])
+  children          Category[]       @relation("CategoryTree")
+  subcategories     Subcategory[]
+  listings          Listing[]
+  
+  @@index([slug])
+  @@map("categories")
+}
+
+model Subcategory {
+  id                String           @id @default(cuid())
+  categoryId        String
+  name              String
+  slug              String           @unique
+  description       String?
+  
+  category          Category         @relation(fields: [categoryId], references: [id])
+  listings          Listing[]
+  
+  @@map("subcategories")
+}
+
+// ==================== SHOPPING CART ====================
+model CartItem {
+  id                String           @id @default(cuid())
+  buyerId           String
+  listingId         String
+  variantId         String?
+  quantity          Int              @default(1)
+  addedAt           DateTime         @default(now())
+  
+  buyer             Buyer            @relation(fields: [buyerId], references: [id])
+  listing           Listing          @relation(fields: [listingId], references: [id])
+  
+  @@unique([buyerId, listingId, variantId])
+  @@map("cart_items")
+}
+
+// ==================== ORDERS & TRANSACTIONS ====================
+model Order {
+  id                String           @id @default(cuid())
+  orderNumber       String           @unique
+  buyerId           String
+  sellerId          String
+  
+  // Status
+  status            OrderStatus      @default(PENDING)
+  paymentStatus     PaymentStatus    @default(PENDING)
+  fulfillmentStatus FulfillmentStatus @default(UNFULFILLED)
+  
+  // Amounts
+  subtotal          Decimal          @db.Decimal(10, 2)
+  shipping          Decimal          @db.Decimal(10, 2)
+  tax               Decimal          @db.Decimal(10, 2)
+  discount          Decimal          @default(0) @db.Decimal(10, 2)
+  total             Decimal          @db.Decimal(10, 2)
+  currency          String           @default("USD")
+  
+  // Stripe
+  stripePaymentId   String?
+  stripeRefundId    String?
+  
+  // Shipping
+  shippingAddress   Json
+  shippingMethod    String?
+  trackingNumber    String?
+  shippedAt         DateTime?
+  deliveredAt       DateTime?
+  
+  // Escrow
+  escrowReleaseAt   DateTime?
+  escrowReleasedAt  DateTime?
+  
+  // Timestamps
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  cancelledAt       DateTime?
+  
+  // Relations
+  buyer             Buyer            @relation(fields: [buyerId], references: [id])
+  seller            Seller           @relation(fields: [sellerId], references: [id])
+  items             OrderItem[]
+  transactions      Transaction[]
+  refunds           Refund[]
+  disputes          Dispute[]
+  
+  @@index([orderNumber])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  REFUNDED
+  PARTIALLY_REFUNDED
+  FAILED
+}
+
+enum FulfillmentStatus {
+  UNFULFILLED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  SHIPPED
+  DELIVERED
+}
+
+model OrderItem {
+  id                String           @id @default(cuid())
+  orderId           String
+  listingId         String
+  variantId         String?
+  
+  // Snapshot at time of order
+  title             String
+  price             Decimal          @db.Decimal(10, 2)
+  quantity          Int
+  total             Decimal          @db.Decimal(10, 2)
+  
+  order             Order            @relation(fields: [orderId], references: [id])
+  listing           Listing          @relation(fields: [listingId], references: [id])
+  
+  @@map("order_items")
+}
+
+model Transaction {
+  id                String           @id @default(cuid())
+  orderId           String
+  type              TransactionType
+  amount            Decimal          @db.Decimal(10, 2)
+  currency          String           @default("USD")
+  status            TransactionStatus @default(PENDING)
+  stripeId          String?
+  metadata          Json?
+  processedAt       DateTime?
+  createdAt         DateTime         @default(now())
+  
+  order             Order            @relation(fields: [orderId], references: [id])
+  
+  @@map("transactions")
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+  PAYOUT
+  FEE
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// ==================== REFUNDS & DISPUTES ====================
+model Refund {
+  id                String           @id @default(cuid())
+  orderId           String
+  reason            RefundReason
+  amount            Decimal          @db.Decimal(10, 2)
+  status            RefundStatus     @default(REQUESTED)
+  notes             String?
+  stripeRefundId    String?
+  
+  requestedAt       DateTime         @default(now())
+  approvedAt        DateTime?
+  processedAt       DateTime?
+  
+  order             Order            @relation(fields: [orderId], references: [id])
+  
+  @@map("refunds")
+}
+
+enum RefundReason {
+  ITEM_NOT_AS_DESCRIBED
+  ITEM_NOT_RECEIVED
+  DAMAGED_ITEM
+  WRONG_ITEM
+  CHANGED_MIND
+  OTHER
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PROCESSING
+  COMPLETED
+}
+
+model Dispute {
+  id                String           @id @default(cuid())
+  orderId           String
+  initiatedBy       String           // userId
+  reason            String
+  description       String
+  status            DisputeStatus    @default(OPEN)
+  resolution        String?
+  evidence          Json[]           // Array of evidence documents
+  
+  openedAt          DateTime         @default(now())
+  closedAt          DateTime?
+  
+  order             Order            @relation(fields: [orderId], references: [id])
+  messages          DisputeMessage[]
+  
+  @@map("disputes")
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  AWAITING_RESPONSE
+  RESOLVED
+  CLOSED
+}
+
+model DisputeMessage {
+  id                String           @id @default(cuid())
+  disputeId         String
+  userId            String
+  message           String
+  attachments       Json[]
+  createdAt         DateTime         @default(now())
+  
+  dispute           Dispute          @relation(fields: [disputeId], references: [id])
+  
+  @@map("dispute_messages")
+}
+
+// ==================== SELLER FINANCIALS ====================
+model Payout {
+  id                String           @id @default(cuid())
+  sellerId          String
+  amount            Decimal          @db.Decimal(10, 2)
+  currency          String           @default("USD")
+  status            PayoutStatus     @default(PENDING)
+  stripeTransferId  String?
+  
+  periodStart       DateTime
+  periodEnd         DateTime
+  scheduledFor      DateTime
+  processedAt       DateTime?
+  
+  seller            Seller           @relation(fields: [sellerId], references: [id])
+  
+  @@index([sellerId])
+  @@index([status])
+  @@map("payouts")
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Statement {
+  id                String           @id @default(cuid())
+  sellerId          String
+  periodStart       DateTime
+  periodEnd         DateTime
+  
+  // Summary
+  totalSales        Decimal          @db.Decimal(10, 2)
+  totalFees         Decimal          @db.Decimal(10, 2)
+  totalRefunds      Decimal          @db.Decimal(10, 2)
+  netAmount         Decimal          @db.Decimal(10, 2)
+  
+  // Details
+  transactions      Json             // Detailed transaction list
+  
+  generatedAt       DateTime         @default(now())
+  
+  seller            Seller           @relation(fields: [sellerId], references: [id])
+  
+  @@map("statements")
+}
+
+// ==================== BUYER FEATURES ====================
+model Wishlist {
+  id                String           @id @default(cuid())
+  buyerId           String
+  name              String           @default("My Wishlist")
+  isPublic          Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  
+  buyer             Buyer            @relation(fields: [buyerId], references: [id])
+  items             WishlistItem[]
+  
+  @@map("wishlists")
+}
+
+model WishlistItem {
+  id                String           @id @default(cuid())
+  wishlistId        String
+  listingId         String
+  addedAt           DateTime         @default(now())
+  
+  wishlist          Wishlist         @relation(fields: [wishlistId], references: [id])
+  listing           Listing          @relation(fields: [listingId], references: [id])
+  
+  @@unique([wishlistId, listingId])
+  @@map("wishlist_items")
+}
+
+model Follow {
+  id                String           @id @default(cuid())
+  buyerId           String
+  sellerId          String
+  createdAt         DateTime         @default(now())
+  
+  buyer             Buyer            @relation(fields: [buyerId], references: [id])
+  seller            Seller           @relation(fields: [sellerId], references: [id])
+  
+  @@unique([buyerId, sellerId])
+  @@map("follows")
+}
+
+model SavedSearch {
+  id                String           @id @default(cuid())
+  buyerId           String
+  name              String
+  query             String
+  filters           Json
+  alertEnabled      Boolean          @default(false)
+  alertFrequency    AlertFrequency   @default(DAILY)
+  createdAt         DateTime         @default(now())
+  
+  buyer             Buyer            @relation(fields: [buyerId], references: [id])
+  
+  @@map("saved_searches")
+}
+
+enum AlertFrequency {
+  INSTANT
+  DAILY
+  WEEKLY
+}
+
+// ==================== COMMUNICATION ====================
+model Message {
+  id                String           @id @default(cuid())
+  conversationId    String
+  senderId          String
+  recipientId       String
+  content           String
+  attachments       Json[]
+  isRead            Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  
+  sender            User             @relation(fields: [senderId], references: [id])
+  conversation      Conversation     @relation(fields: [conversationId], references: [id])
+  
+  @@index([conversationId])
+  @@map("messages")
+}
+
+model Conversation {
+  id                String           @id @default(cuid())
+  listingId         String?
+  orderId           String?
+  participantIds    String[]
+  lastMessageAt     DateTime?
+  createdAt         DateTime         @default(now())
+  
+  messages          Message[]
+  
+  @@index([listingId])
+  @@index([orderId])
+  @@map("conversations")
+}
+
+// ==================== REVIEWS & RATINGS ====================
+model Review {
+  id                String           @id @default(cuid())
+  listingId         String
+  orderId           String
+  reviewerId        String
+  rating            Int              // 1-5
+  title             String?
+  comment           String
+  images            String[]
+  
+  // Seller response
+  sellerResponse    String?
+  sellerRespondedAt DateTime?
+  
+  // Verification
+  verifiedPurchase  Boolean          @default(true)
+  helpful           Int              @default(0)
+  notHelpful        Int              @default(0)
+  
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  listing           Listing          @relation(fields: [listingId], references: [id])
+  reviewer          User             @relation(fields: [reviewerId], references: [id])
+  
+  @@unique([listingId, orderId, reviewerId])
+  @@index([listingId])
+  @@index([reviewerId])
+  @@map("reviews")
+}
+
+// ==================== MODERATION & SAFETY ====================
+model Report {
+  id                String           @id @default(cuid())
+  reporterId        String
+  targetType        ReportTargetType
+  targetId          String
+  reason            ReportReason
+  description       String
+  status            ReportStatus     @default(PENDING)
+  resolution        String?
+  
+  createdAt         DateTime         @default(now())
+  resolvedAt        DateTime?
+  
+  reporter          User             @relation(fields: [reporterId], references: [id])
+  listing           Listing?         @relation(fields: [targetId], references: [id])
+  
+  @@index([targetType, targetId])
+  @@index([status])
+  @@map("reports")
+}
+
+enum ReportTargetType {
+  LISTING
+  USER
+  REVIEW
+  MESSAGE
+}
+
+enum ReportReason {
+  INAPPROPRIATE_CONTENT
+  COUNTERFEIT
+  MISLEADING
+  SPAM
+  FRAUD
+  PROHIBITED_ITEM
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+// ==================== PROMOTIONS & MARKETING ====================
+model Promotion {
+  id                String           @id @default(cuid())
+  sellerId          String
+  code              String           @unique
+  type              PromotionType
+  value             Decimal          @db.Decimal(10, 2)
+  minPurchase       Decimal?         @db.Decimal(10, 2)
+  maxDiscount       Decimal?         @db.Decimal(10, 2)
+  usageLimit        Int?
+  usageCount        Int              @default(0)
+  
+  startsAt          DateTime
+  endsAt            DateTime
+  
+  seller            Seller           @relation(fields: [sellerId], references: [id])
+  
+  @@index([code])
+  @@index([sellerId])
+  @@map("promotions")
+}
+
+enum PromotionType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIPPING
+  BUY_ONE_GET_ONE
+}
+
+// ==================== MISC ====================
+model Address {
+  id                String           @id @default(cuid())
+  userId            String
+  label             String?
+  firstName         String
+  lastName          String
+  company           String?
+  street1           String
+  street2           String?
+  city              String
+  state             String
+  postalCode        String
+  country           String
+  phone             String?
+  isDefault         Boolean          @default(false)
+  
+  user              User             @relation(fields: [userId], references: [id])
+  
+  @@map("addresses")
+}
+
+model ShippingProfile {
+  id                String           @id @default(cuid())
+  listingId         String
+  name              String
+  processingTime    Int              // days
+  shippingCost      Decimal          @db.Decimal(10, 2)
+  additionalCost    Decimal?         @db.Decimal(10, 2) // per additional item
+  freeShipping      Boolean          @default(false)
+  freeShippingMin   Decimal?         @db.Decimal(10, 2)
+  countries         String[]
+  
+  listing           Listing          @relation(fields: [listingId], references: [id])
+  
+  @@map("shipping_profiles")
+}
+
+model ShopCategory {
+  id                String           @id @default(cuid())
+  sellerId          String
+  name              String
+  slug              String
+  position          Int              @default(0)
+  
+  seller            Seller           @relation(fields: [sellerId], references: [id])
+  
+  @@unique([sellerId, slug])
+  @@map("shop_categories")
+}
+
+model Notification {
+  id                String           @id @default(cuid())
+  userId            String
+  type              NotificationType
+  title             String
+  message           String
+  data              Json?
+  isRead            Boolean          @default(false)
+  createdAt         DateTime         @default(now())
+  
+  user              User             @relation(fields: [userId], references: [id])
+  
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  ORDER_PLACED
+  ORDER_SHIPPED
+  ORDER_DELIVERED
+  MESSAGE_RECEIVED
+  REVIEW_RECEIVED
+  PAYOUT_PROCESSED
+  LISTING_APPROVED
+  LISTING_REJECTED
+  PRICE_DROP
+  BACK_IN_STOCK
+}
+
+model Session {
+  id                String           @id @default(cuid())
+  sessionToken      String           @unique
+  userId            String
+  expires           DateTime
+  
+  user              User             @relation(fields: [userId], references: [id])
+  
+  @@map("sessions")
+}
