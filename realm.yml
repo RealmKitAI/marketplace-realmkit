@@ -1,5 +1,5 @@
 name: "RealmKit Marketplace"
-version: "1.0.0"
+version: "1.0.1"
 description: "Complete AI-powered two-sided marketplace platform with advanced features for buyers, sellers, and administrators"
 longDescription: "The most comprehensive marketplace platform featuring AI-powered listing quality checks, Stripe Connect integration, advanced search with Elasticsearch, fraud detection, escrow system, dispute resolution, and complete seller/buyer dashboards."
 namespace: "realmkitai/marketplace-realmkit"
